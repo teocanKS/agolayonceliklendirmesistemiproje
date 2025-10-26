@@ -1,0 +1,32 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "public/**/*",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "api/**/*.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    { "src": "/api/(.*)", "dest": "/api/$1.js" },
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "dest": "/public/index.html" }
+  ],
+  "env": {
+    "DATABASE_URL": "@database_url",
+    "NODE_ENV": "production"
+  },
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET,OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization" }
+      ]
+    }
+  ]
+}
