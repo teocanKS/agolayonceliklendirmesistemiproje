@@ -1,7 +1,7 @@
 {
   "name": "network-event-priority-scoring-dashboard",
   "version": "1.0.0",
-  "description": "Network Event Priority Scoring Dashboard with Node.js API and PostgreSQL integration.",
+  "description": "Network Event Priority Scoring Dashboard with Node.js API and MySQL integration.",
   "type": "module",
   "scripts": {
     "dev": "vercel dev",
@@ -9,7 +9,7 @@
     "build": "node -e \"console.log('No build step required; using public directory')\""
   },
   "dependencies": {
-    "pg": "^8.16.3",
+    "mysql2": "^3.11.5",
     "vercel": "^48.6.0"
   }
 }

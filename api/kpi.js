@@ -1,4 +1,5 @@
 import { isDatabaseConfigured, queryDatabase } from "./db.js";
+import { buildMockKpi, buildMockEvents } from "./mock-data.js";
 
 const MAX_RANGE_DAYS = 30;
 
@@ -8,8 +9,11 @@ export default async function handler(request, response) {
     return response.status(405).json({ error: "Method not allowed" });
   }
 
+  // If database is not configured, return mock data
   if (!isDatabaseConfigured) {
-    return response.status(503).json({ error: "Database connection is not configured." });
+    const mockEvents = buildMockEvents();
+    const mockKpi = buildMockKpi(mockEvents);
+    return response.status(200).json(mockKpi);
   }
 
   try {
@@ -17,52 +21,53 @@ export default async function handler(request, response) {
 
     const { rows } = await queryDatabase(
       `
-        with windowed as (
-          select
-            score,
-            label
-          from events
-          where event_timestamp >= $1
-            and event_timestamp <= $2
+        WITH event_data AS (
+          SELECT
+            CAST(COALESCE(JSON_EXTRACT(metrics, '$.score'),
+                         JSON_EXTRACT(metrics, '$.impact') * 100, 0) AS DECIMAL(10,2)) as score,
+            CASE
+              WHEN tags IS NOT NULL AND JSON_LENGTH(tags) > 0
+              THEN JSON_UNQUOTE(JSON_EXTRACT(tags, '$[0]'))
+              ELSE NULL
+            END as label
+          FROM events
+          WHERE event_timestamp >= ?
+            AND event_timestamp <= ?
         ),
-        summary as (
-          select
-            count(*)::int as total_events,
-            count(*) filter (where score >= 75)::int as high_priority_count,
-            coalesce(avg(score), 0)::float as average_score
-          from windowed
+        summary AS (
+          SELECT
+            COUNT(*) as total_events,
+            SUM(CASE WHEN score >= 75 THEN 1 ELSE 0 END) as high_priority_count,
+            COALESCE(AVG(score), 0) as average_score
+          FROM event_data
         ),
-        top_labels as (
-          select
+        top_labels_data AS (
+          SELECT
             label,
-            count(*) as occurrences
-          from windowed
-          where label is not null and label <> ''
-          group by label
-          order by occurrences desc
-          limit 5
+            COUNT(*) as occurrences
+          FROM event_data
+          WHERE label IS NOT NULL AND label != ''
+          GROUP BY label
+          ORDER BY occurrences DESC
+          LIMIT 5
         )
-        select
-          summary.total_events,
-          summary.high_priority_count,
-          summary.average_score,
-          coalesce(
-            (
-              select json_agg(
-                json_build_object(
-                  'label', ordered.label,
-                  'count', ordered.occurrences
+        SELECT
+          s.total_events,
+          s.high_priority_count,
+          s.average_score,
+          (
+            SELECT COALESCE(
+              JSON_ARRAYAGG(
+                JSON_OBJECT(
+                  'label', t.label,
+                  'count', t.occurrences
                 )
-              )
-              from (
-                select label, occurrences
-                from top_labels
-                order by occurrences desc
-              ) as ordered
-            ),
-            '[]'::json
+              ),
+              JSON_ARRAY()
+            )
+            FROM top_labels_data t
           ) as top_labels
-        from summary;
+        FROM summary s;
       `,
       [fromDate.toISOString(), toDate.toISOString()]
     );
@@ -121,16 +126,29 @@ function normalizeResult(row) {
     };
   }
 
+  // Parse top_labels if it's a JSON string
+  let topLabels = [];
+  if (row.top_labels) {
+    if (typeof row.top_labels === 'string') {
+      try {
+        topLabels = JSON.parse(row.top_labels);
+      } catch (error) {
+        console.warn("Failed to parse top_labels:", error);
+        topLabels = [];
+      }
+    } else if (Array.isArray(row.top_labels)) {
+      topLabels = row.top_labels;
+    }
+  }
+
   return {
     total_events: Number(row.total_events ?? 0),
     high_priority_count: Number(row.high_priority_count ?? 0),
     average_score: formatAverageScore(row.average_score),
-    top_labels: Array.isArray(row.top_labels)
-      ? row.top_labels.map((item) => ({
-          label: item.label,
-          count: Number(item.count ?? item.occurrences ?? 0),
-        }))
-      : [],
+    top_labels: topLabels.map((item) => ({
+      label: item.label,
+      count: Number(item.count ?? item.occurrences ?? 0),
+    })),
   };
 }
 

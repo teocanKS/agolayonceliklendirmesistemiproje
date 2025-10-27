@@ -86,7 +86,8 @@ async function refreshData() {
     const eventData = await eventsResponse.json();
 
     state.kpis = kpiData;
-    state.events = Array.isArray(eventData?.events) ? eventData.events : [];
+    // Handle both {events: []} and direct array responses
+    state.events = eventData?.events ? eventData.events : (Array.isArray(eventData) ? eventData : []);
 
     renderKPIs();
     renderInsights();

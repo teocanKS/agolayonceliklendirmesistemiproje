@@ -1,4 +1,5 @@
 import { isDatabaseConfigured, queryDatabase } from "./db.js";
+import { buildMockEvents } from "./mock-data.js";
 
 const MAX_RANGE_DAYS = 30;
 const DEFAULT_LIMIT = 500;
@@ -10,8 +11,10 @@ export default async function handler(request, response) {
     return response.status(405).json({ error: "Method not allowed" });
   }
 
+  // If database is not configured, return mock data
   if (!isDatabaseConfigured) {
-    return response.status(503).json({ error: "Database connection is not configured." });
+    const mockEvents = buildMockEvents();
+    return response.status(200).json({ events: mockEvents });
   }
 
   const { from, to, label, dst_ip: dstIp, limit } = request.query ?? {};
@@ -19,10 +22,9 @@ export default async function handler(request, response) {
   try {
     const { clauses, params } = buildFilters({ from, to, label, dstIp });
     const limitValue = deriveLimit(limit);
-    const paramIndex = params.length + 1;
 
     const queryText = `
-      select
+      SELECT
         id,
         title,
         detection_rule,
@@ -39,17 +41,17 @@ export default async function handler(request, response) {
         event_timestamp,
         tags,
         metrics
-      from events
-      ${clauses.length ? `where ${clauses.join(" and ")}` : ""}
-      order by event_timestamp desc
-      limit $${paramIndex};
+      FROM events
+      ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""}
+      ORDER BY event_timestamp DESC
+      LIMIT ?;
     `;
 
     const { rows } = await queryDatabase(queryText, [...params, limitValue]);
 
-    return response.status(200).json(
-      rows.map(transformRowToEvent)
-    );
+    return response.status(200).json({
+      events: rows.map(transformRowToEvent)
+    });
   } catch (error) {
     if (error.statusCode) {
       return response.status(error.statusCode).json({ error: error.message });
@@ -62,20 +64,19 @@ export default async function handler(request, response) {
 function buildFilters({ from, to, label, dstIp }) {
   const clauses = [];
   const params = [];
-  let index = 1;
 
   let fromDate;
   let toDate;
 
   if (from) {
     fromDate = parseDate(from, "from");
-    clauses.push(`event_timestamp >= $${index++}`);
+    clauses.push(`event_timestamp >= ?`);
     params.push(fromDate.toISOString());
   }
 
   if (to) {
     toDate = parseDate(to, "to");
-    clauses.push(`event_timestamp <= $${index++}`);
+    clauses.push(`event_timestamp <= ?`);
     params.push(toDate.toISOString());
   }
 
@@ -88,18 +89,13 @@ function buildFilters({ from, to, label, dstIp }) {
   }
 
   if (label) {
-    clauses.push(`
-      exists (
-        select 1
-        from unnest(coalesce(tags, array[]::text[])) as tag
-        where tag ilike $${index++}
-      )
-    `);
+    // MySQL: Check if JSON array contains the label (case-insensitive)
+    clauses.push(`JSON_SEARCH(tags, 'one', ?, NULL, '$[*]') IS NOT NULL`);
     params.push(`%${label}%`);
   }
 
   if (dstIp) {
-    clauses.push(`destination_ip = $${index++}`);
+    clauses.push(`destination_ip = ?`);
     params.push(dstIp);
   }
 
@@ -183,13 +179,23 @@ export function transformRowToEvent(row) {
 
 function parseTags(tags) {
   if (!tags) return [];
-  if (Array.isArray(tags)) return tags;
+
+  // Handle JSON array from MySQL
   if (typeof tags === "string") {
-    return tags
-      .split(/[;,]/)
-      .map((tag) => tag.trim())
-      .filter(Boolean);
+    try {
+      const parsed = JSON.parse(tags);
+      if (Array.isArray(parsed)) return parsed;
+    } catch (error) {
+      // If not JSON, try comma/semicolon separated
+      return tags
+        .split(/[;,]/)
+        .map((tag) => tag.trim())
+        .filter(Boolean);
+    }
   }
+
+  if (Array.isArray(tags)) return tags;
+
   return [];
 }
 
@@ -198,14 +204,18 @@ function normalizeMetrics(metrics) {
     return {};
   }
 
-  if (typeof metrics === "object") {
+  if (typeof metrics === "object" && !Array.isArray(metrics)) {
     return metrics;
   }
 
-  try {
-    return JSON.parse(metrics);
-  } catch (error) {
-    console.warn("Unable to parse metrics JSON:", error);
-    return {};
+  if (typeof metrics === "string") {
+    try {
+      return JSON.parse(metrics);
+    } catch (error) {
+      console.warn("Unable to parse metrics JSON:", error);
+      return {};
+    }
   }
+
+  return {};
 }

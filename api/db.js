@@ -1,4 +1,4 @@
-import { Pool } from "pg";
+import mysql from "mysql2/promise";
 
 const connectionString = process.env.DATABASE_URL;
 const isProduction = process.env.NODE_ENV === "production";
@@ -12,12 +12,40 @@ if (isDatabaseConfigured) {
   const globalScope = globalThis;
 
   if (!globalScope[poolKey]) {
-    globalScope[poolKey] = new Pool({
-      connectionString,
-      ssl: isProduction ? { rejectUnauthorized: false } : false,
-      max: 10,
-      idleTimeoutMillis: 5_000,
-    });
+    // Parse DATABASE_URL if it's a full URL string (mysql://user:pass@host:port/database)
+    // or create pool from individual env vars
+    try {
+      if (connectionString.startsWith("mysql://")) {
+        const url = new URL(connectionString);
+        globalScope[poolKey] = mysql.createPool({
+          host: url.hostname,
+          port: url.port || 3306,
+          user: url.username,
+          password: url.password,
+          database: url.pathname.slice(1), // Remove leading slash
+          waitForConnections: true,
+          connectionLimit: 10,
+          queueLimit: 0,
+          enableKeepAlive: true,
+          keepAliveInitialDelay: 0,
+          ssl: isProduction ? { rejectUnauthorized: false } : undefined,
+        });
+      } else {
+        // Direct connection string or connection options
+        globalScope[poolKey] = mysql.createPool({
+          uri: connectionString,
+          waitForConnections: true,
+          connectionLimit: 10,
+          queueLimit: 0,
+          enableKeepAlive: true,
+          keepAliveInitialDelay: 0,
+          ssl: isProduction ? { rejectUnauthorized: false } : undefined,
+        });
+      }
+    } catch (error) {
+      console.error("Failed to create MySQL pool:", error);
+      throw error;
+    }
   }
 
   pool = globalScope[poolKey];
@@ -28,17 +56,17 @@ export async function queryDatabase(text, params = []) {
     throw new Error("DATABASE_URL environment variable is not set.");
   }
 
-  let client;
+  let connection;
   try {
-    client = await pool.connect();
-    const result = await client.query(text, params);
-    return result;
+    connection = await pool.getConnection();
+    const [rows] = await connection.query(text, params);
+    return { rows };
   } catch (error) {
     console.error("Database query failed:", error);
     throw error;
   } finally {
-    if (client) {
-      client.release();
+    if (connection) {
+      connection.release();
     }
   }
 }
