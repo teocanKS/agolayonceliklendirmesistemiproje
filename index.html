@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1"
+    />
+    <title>Ağ Olay Önceliklendirme Sistemi</title>
+    <link
+      rel="preconnect"
+      href="https://fonts.googleapis.com"
+      crossorigin="anonymous"
+    />
+    <link
+      rel="preconnect"
+      href="https://fonts.gstatic.com"
+      crossorigin="anonymous"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="dashboard">
+      <aside class="sidebar" aria-label="Birincil gezinme">
+        <div class="sidebar__brand">
+          <span class="sidebar__accent"></span>
+          <div>
+            <p class="sidebar__title">SecOps Komuta</p>
+            <p class="sidebar__subtitle">Ağ Önceliklendirme Modülü</p>
+          </div>
+        </div>
+
+        <nav class="sidebar__nav">
+          <a href="#charts">Grafikler</a>
+          <a href="#events">Olaylar</a>
+        </nav>
+
+        <div class="sidebar__footer">
+          <p class="sidebar__status">Canlı telemetri</p>
+          <p class="sidebar__hint">Veri her 60 saniyede yenilenir</p>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="top-bar">
+          <div class="top-bar__left">
+            <h1>Ağ Olay Önceliklendirme</h1>
+            <p class="top-bar__subtitle">Tehdit duruşunu izleyin, yanıtı önceliklendirin.</p>
+          </div>
+          <div class="top-bar__right">
+            <button id="refresh-button" type="button">Veriyi Yenile</button>
+            <div class="top-bar__meta">
+              <span class="dot"></span>
+              <span>Son güncelleme</span>
+              <time id="last-updated" datetime="">--</time>
+            </div>
+          </div>
+        </header>
+
+        
+
+        <section id="charts" class="section">
+          <div class="section__heading">
+            <h2>Ağ İçgörüleri</h2>
+            <p>Tehdit duruşunun görsel analizi (yakında).</p>
+          </div>
+          <div class="panel charts-placeholder">
+            <p>Grafikler entegrasyon sonrası burada görünecek.</p>
+          </div>
+        </section>
+
+        <section id="events" class="section">
+          <div class="section__heading section__heading--row">
+            <div>
+              <h2>Olay Akışı</h2>
+              <p>Bağlamsal önerilerle öncelik sırasına göre ağ telemetrisi.</p>
+            </div>
+            <span class="chip" id="event-count">0 olay</span>
+          </div>
+
+          <div class="status-indicators">
+            <div class="loading" id="loading-indicator" hidden>
+              <span class="loading__spinner"></span>
+              <span>En son telemetri yükleniyor…</span>
+            </div>
+            <div class="error" id="error-banner" hidden>
+              <span role="img" aria-label="Uyarı">⚠️</span>
+              <p id="error-message">Olaylar yüklenemedi.</p>
+            </div>
+          </div>
+
+          <div class="table-wrapper">
+            <table class="events-table">
+              <thead>
+                <tr>
+                  <th scope="col">Zaman</th>
+                  <th scope="col">Kaynak</th>
+                  <th scope="col">Hedef</th>
+                  <th scope="col">Etiket</th>
+                  <th scope="col">Puan</th>
+                  <th scope="col">Eylem</th>
+                </tr>
+              </thead>
+              <tbody id="event-table-body">
+                <tr class="skeleton-row">
+                  <td colspan="6">
+                    <div class="skeleton"></div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="./scoring-engine.js"></script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
